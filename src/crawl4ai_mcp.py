@@ -22,6 +22,7 @@ import re
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 from utils import get_supabase_client, add_documents_to_supabase, search_documents
+from file_scraper import scrape_site_to_files # Added for the new tool
 
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent
@@ -592,3 +593,55 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+@mcp.tool()
+async def execute_site_scraping_to_files(
+    ctx: Context, 
+    target_urls: List[str], 
+    output_base_dir: str = "workspace/scraped_data", 
+    max_depth: int = 3,
+    save_raw_html: bool = False
+) -> str:
+    """
+    Crawls one or more websites and saves the scraped data to files.
+
+    For each URL in target_urls, it crawls the site up to max_depth,
+    processes pages using scrape_page_to_data, and saves results to
+    output_base_dir/<site_folder_name>/<page_filename>.json.
+    Optionally saves raw HTML.
+
+    Args:
+        ctx: The MCP server provided context.
+        target_urls: A list of starting URLs to crawl.
+        output_base_dir: Base directory for saving scraped data.
+                         Defaults to "workspace/scraped_data".
+        max_depth: Maximum crawl depth for internal links. Defaults to 3.
+        save_raw_html: If True, saves raw HTML content of pages. Defaults to False.
+
+    Returns:
+        A JSON string containing a list of summaries for each target URL's scraping operation.
+    """
+    crawler = ctx.request_context.lifespan_context.crawler
+    all_results = []
+
+    for url in target_urls:
+        try:
+            result_summary = await scrape_site_to_files(
+                crawler=crawler,
+                start_url=url,
+                output_base_dir=output_base_dir,
+                max_depth=max_depth,
+                save_raw_html=save_raw_html
+            )
+            all_results.append(result_summary)
+        except Exception as e:
+            all_results.append({
+                "success": False,
+                "start_url": url,
+                "error": str(e)
+            })
+            # Optionally, log the error more verbosely on the server side
+            print(f"Error during site scraping for {url}: {e}")
+
+    return json.dumps(all_results, indent=2)
